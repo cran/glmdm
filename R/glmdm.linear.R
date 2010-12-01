@@ -3,12 +3,18 @@
 # R CODE FOR SIMULATION OF GLMDM, (c) Kyung, Casella, and Gill, February 2008
 ####################################################################################################
 
+
+
+
+
+
 ####################################################################################################
 # START glmdm.linear FUNCTION
 ####################################################################################################
 glmdm.linear <- function(Y, X, family=linear, num.reps=1000, log=TRUE, a1=3, b1=2, d=0.25, MM=15,VV=30,...) {
 # SET QUANTITIES FROM DATA
 n <- nrow(X); K <- ncol(X)
+beta <- runif(K,-3,3)
 mu <- 0; tau <- 1; 
 # For the prior of m, we use Gamma(a,b)
 # Here ab=MM and ab^2=VV. 
@@ -16,12 +22,12 @@ Sh <- (MM^2)/VV
 Sc <- VV/MM
 
 ####################################################################################################
-# RUN A LM TO GET hat.beta and hat.var
+# RUN A GLM TO GET hat.beta and hat.var
 ####################################################################################################
 
-suppressWarnings(lm.out <- lm(Y ~ X))
-hat.beta <- coefficients(summary(lm.out))[,1]
-hat.var  <- (coefficients(summary(lm.out))[,2])^2
+suppressWarnings(glm.out <- glm(Y ~ X,family=binomial(link=probit)))
+hat.beta <- coefficients(summary(glm.out))[,1]
+hat.var  <- (coefficients(summary(glm.out))[,2])^2
 
 ####################################################################################################
 # FIX PRIOR DISTRIBUTIONS AND PRIOR PARAMETERS
@@ -40,10 +46,10 @@ aa            <- chol(solve(t(X) %*% X + diag(1/sigma.beta.sq, nrow=ncol(X))))
 SIG           <- t(X)%*%X + diag(1/sigma.beta.sq, nrow=ncol(X))				# VAR/COVAR MATRIX
 SIG.inv       <- solve(SIG)								# INVERT HERE FOR EFFICIENCY
 Z             <- rep(NA,length=n)							# Z TO FILL-IN DURING LOOPING
-bbeta         <- rmvnorm(1, mean=hat.beta, sigma=diag(hat.var))				# STARTING VALUES FROM ABOVE
-bbeta         <- rbind( bbeta,matrix(rep(NA,num.reps*ncol(bbeta)),ncol=ncol(bbeta)) )	# MATRIX TO FILL IN DURING LOOP
+beta          <- rmvnorm(1, mean=hat.beta, sigma=diag(hat.var))				# STARTING VALUES FROM ABOVE
+beta          <- rbind( beta,matrix(rep(NA,num.reps*ncol(beta)),ncol=ncol(beta)) )	# MATRIX TO FILL IN DURING LOOP
 n.i           <- rep(1,n);   								# LOOP NEEDS REP OF n'S
-q             <- rDirichlet.acomp(1, alpha=n.i)						# PROBABILITY OF ASSIGNMENT
+q             <- rdirichlet(1, alpha=n.i)						# PROBABILITY OF ASSIGNMENT
 A.n 	      <- sample(1:n,n,replace=TRUE,q)				 		# CREATES THE ASSIGNMENTS.
 A.K 	      <- table(A.n)						 		# CREATES THE LIST OF OCCUPIED
 A.K.labels    <- as.numeric(names(A.K))  						# LOCATIONS OF OCCUPIED
@@ -54,7 +60,7 @@ B             <- B*rnorm(n,0,tau)							# ASSIGN psi VALUES TO OCCUPIED
 nk            <- rep(0,n); for (i in 1:n) nk[A.n[i]] <- nk[A.n[i]] + 1			# COUNTS OCCUPANTS AT TABLES
 psi           <- B[A.n] 								# MAP TABLE psi'S TO CASES
 like.K        <- 0									# LOG-LIKE STARTS AT ZERO
-X.beta1       <- X%*%bbeta[1,]								# MULTIPLY X AND bbeta IN ADVANCE
+X.beta1       <- X%*%beta[1,]								# MULTIPLY X AND beta IN ADVANCE
 for (i in 1:n)  
     like.K <- like.K + Y[i] * pnorm( X.beta1[i] + psi[i],log=TRUE) + 
 		(1-Y[i]) * (1 - pnorm( X.beta1[i] + psi[i] )) + 
@@ -82,11 +88,12 @@ for (M in 1:num.reps)  {
     #print("M-H ON THE 'A' MATRIX")
     p.A.old  <- (m^K)
     f.y.old  <- like.K
+    #mul.old  <- cbind(nk,q)
+    #mul.old  <- mul.old[nk>0]
     mult.old <- dmultinom(x=A.K, prob=q[A.K.labels])
-
     #print("CREATE NEW 'A' MATRIX, 'can' STANDS FOR CANDIDATE") 
     pq                <- nk +1   
-    new.q             <- rDirichlet.acomp(1, alpha=pq)
+    new.q             <- rdirichlet(1, alpha=pq)
     A.n.can           <- sample(1:n,n,replace=TRUE,new.q)                                           
     A.K.can           <- table(A.n.can)                                                           
     A.K.labels.can    <- as.numeric(names(A.K.can))                                             
@@ -97,9 +104,12 @@ for (M in 1:num.reps)  {
     psi.can           <- B[A.n.can]                                                        
     p.A.can           <- (m^K.can)  
     like.K.can        <- 0                                                                      
-    X.betaM           <- X%*%bbeta[M,]                                                          
+    X.betaM           <- X%*%beta[M,]                                                          
     for (i in 1:n)
 	like.K.can    <- like.K.can - log(3^2)*n/2 - (1/(2*3^2))*(Y[i] - X.betaM[i] + psi.can[i])^2
+        #like.K.can    <- like.K.can + Y[i] * pnorm( X.betaM[i] + psi.can[i],log=TRUE) +
+        #                 (1-Y[i]) * (1 - pnorm( X.betaM[i] + psi.can[i] )) +
+        #                 dnorm(psi.can[i], mean=0, sd=tau,log=TRUE)
     like.K.can        <- exp(like.K.can + sum(lgamma(A.K.can)))
     f.y.can           <- like.K.can
     mult.can<-dmultinom(x=A.K.can, prob=new.q[A.K.labels.can])
@@ -125,17 +135,17 @@ for (M in 1:num.reps)  {
 
     #print("UPDATE 'z': Truncated Normal")
     for (j in 1:n){
-	mean = X[j,]%*%bbeta[M,] + psi[j]
+	mean = X[j,]%*%beta[M,] + psi[j]
         Z[j] <- rtnorm(1, mean=mean, sd=1, lower=-Inf, upper=0)
         if (Y[j]==1) Z[j] <- rtnorm(1, mean=mean, sd=1, lower=0, upper=Inf)
     }
 
-    #print("UPDATE 'bbeta', 'tau' AND 'eta'")
+    #print("UPDATE 'beta', 'tau' AND 'eta'")
     mn            <- SIG.inv %*% (t(X) %*% (Z-psi)) 
     Mb            <- t(aa) %*% array(rnorm(p), c(p, 1)) + mn 
-    bbeta[M+1, ]  <- t(Mb) 
+    beta[M+1, ]   <- t(Mb) 
     bb            <- diag( sqrt( sigma.sq*tau.sq/(A.K + sigma.sq) ) )
-    meta          <- (1/sigma.sq) * (bb^2) %*% (Z-X%*%bbeta[M+1,])[A.K] 
+    meta          <- (1/sigma.sq) * (bb^2) %*% (Z-X%*%beta[M+1,])[A.K] 
 	eta           <- t(bb) %*% array(rnorm(K), c(K, 1)) + meta 
     tau.sq        <- rinvgamma(1,shape=(K)/2+a1,scale=sum(eta^2)/2+b1)
     # If tau.sq is infinity; 1.7e+100 is reasonable big?!
@@ -145,18 +155,18 @@ for (M in 1:num.reps)  {
 
     #print("UPDATE 'm'") 
     m.hat.s <- m.hess.s <- L.m.s.hat <- NULL
-    mle.m         <- optim(par=initial.m, fn=loglike, method ="L-BFGS-B", lower = 0.01, upper = Inf, 
+    mle.m       <- optim(par=initial.m, fn=loglike, method ="L-BFGS-B", lower = 0.01, upper = Inf, 
 		          hessian = TRUE, control=list(fnscale=-1))
-    m.hat         <- mle.m$par
-    m.hessian     <- mle.m$hessian 
-    L.m.hat       <- loglike(m.hat)
+	m.hat       <- mle.m$par
+	m.hessian   <- mle.m$hessian 
+    L.m.hat     <- loglike(m.hat)
     for (nu in 1:2){ 
- 	mle.m.s   <- optim(par=initial.m, fn=loglike.s, method ="L-BFGS-B", lower = 0.01, upper = Inf, 
+ 	mle.m.s     <- optim(par=initial.m, fn=loglike.s, method ="L-BFGS-B", lower = 0.01, upper = Inf, 
 		          hessian = TRUE, control=list(fnscale=-1))
-	m.hat.s   <- c(m.hat.s, mle.m.s$par)
-	m.hess.s  <- c(m.hess.s, mle.m.s$hessian) 
-	Lms.hat   <- loglike.s(mle.m.s$par)
-	L.m.s.hat <- c(L.m.s.hat, Lms.hat)
+	m.hat.s     <- c(m.hat.s, mle.m.s$par)
+	m.hess.s    <- c(m.hess.s, mle.m.s$hessian) 
+	Lms.hat     <- loglike.s(mle.m.s$par)
+	L.m.s.hat   <- c(L.m.s.hat, Lms.hat)
     }
         
     mean.m <- sqrt(m.hessian/m.hess.s[1])*exp(L.m.s.hat[1] - L.m.hat)
@@ -168,7 +178,6 @@ for (M in 1:num.reps)  {
     m.save <- c(m.save,m) 
    if (M %% 100 == 0) print(paste("finished iteration",M))
 }
-return(bbeta)
 
 } # END TO glmdm FUNCTION CALL
 

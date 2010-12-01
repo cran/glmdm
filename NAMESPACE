@@ -1,5 +1,4 @@
 
-import(compositions)
 import(MASS)
 import(msm)
 import(mvtnorm)
