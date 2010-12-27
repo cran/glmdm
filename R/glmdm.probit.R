@@ -14,18 +14,30 @@
 ####################################################################################################
 # SETUP glmdm UP DATA 
 ####################################################################################################
-glmdm.probit <- function(Y, X, num.reps=1000, log=TRUE, a1=3, b1=2, d=0.25, MM=15,VV=30,...) {
+glmdm.probit <- function(Y, X, num.reps=1000, a1=3, b1=2, d=0.25, MM=15,VV=30,...) {
 # SET QUANTITIES FROM DATA
-n <- nrow(X); K <- ncol(X)
-beta <- runif(K,-3,3)
-mu <- 0; tau <- 1;
+#n <- nrow(X); K <- ncol(X)
+#beta <- runif(K,-3,3)
+#mu <- 0; tau <- 1; 
+n <- nrow(X)
 # For the prior of m, we use Gamma(a,b)
-# Here ab=MM and ab^2=VV.
+# Here ab=MM and ab^2=VV. 
 Sh <- (MM^2)/VV
 Sc <- VV/MM
-B <- Y
-A <- X
 
+#B <- Y
+#A <- X
+####################################################################################################
+# RUN A GLM TO GET hat.beta and hat.var
+####################################################################################################
+
+suppressWarnings(glm.out <- glm(Y ~ X, family=binomial(link=probit)))
+hat.beta <- coefficients(summary(glm.out))[,1]
+hat.var  <- (coefficients(summary(glm.out))[,2])^2
+
+####################################################################################################
+# FIX PRIOR DISTRIBUTIONS AND PRIOR PARAMETERS
+####################################################################################################
 # PRE-LOOP EFFICIENCIES
 tau.sq        <- rinvgamma(1,shape=a1,scale=b1)
 tau           <- sqrt(tau.sq)
@@ -39,14 +51,8 @@ SIG.inv       <- solve(SIG)								# INVERT HERE FOR EFFICIENCY
 Z             <- rep(NA,length=n)							# Z TO FILL-IN DURING LOOPING
 beta          <- rmvnorm(1, mean=hat.beta, sigma=diag(hat.var))				# STARTING VALUES FROM ABOVE
 beta          <- rbind( beta,matrix(rep(NA,num.reps*ncol(beta)),ncol=ncol(beta)) )	# MATRIX TO FILL IN DURING LOOP
-n.i           <- rep(1,n);   								# LOOP NEEDS REP OF n'S
-q             <- rdirichlet(1, alpha=n.i)
-
-		## to surpress the error message - Jeff approved!
-options(warn=-1)
-# PROBABILITY OF ASSIGNMENT
+q          <- c(rdirichlet(1, rep(1, n)))					# PROBABILITY OF ASSIGNMENT
 A.n 	      <- sample(1:n,n,replace=TRUE,q)	
-options(warn=0)
 			 		# CREATES THE ASSIGNMENTS.
 A.K 	      <- table(A.n)						 		# CREATES THE LIST OF OCCUPIED
 A.K.labels    <- as.numeric(names(A.K))  						# LOCATIONS OF OCCUPIED
@@ -65,7 +71,7 @@ for (i in 1:n)
 like.K <- exp(like.K + sum(lgamma(A.K)))
 
 # SETUP TO SAVE GIBBS SAMPLER VALUES
-tau.sq.post <- psi.post <- beta.post <- xi.post <- K.save <- like.K.save <- m.save <- NULL 
+tau.sq.post <- psi.post <- xi.post <- K.save <- like.K.save <- m.save <- NULL 
 
 ####################################################################################################
 # NEW POSTERIOR FOR m FUNCTION
@@ -91,7 +97,7 @@ for (M in 1:num.reps)  {
  	  
     #print("CREATE NEW 'A' MATRIX, 'can' STANDS FOR CANDIDATE") 
     pq                <- nk +1   
-    new.q             <- rdirichlet(1, alpha=pq)
+    new.q             <- rdirichlet(1, pq)
     A.n.can           <- sample(1:n,n,replace=TRUE,new.q)                                           
     A.K.can           <- table(A.n.can)                                                           
     A.K.labels.can    <- as.numeric(names(A.K.can))                                             
@@ -142,9 +148,17 @@ for (M in 1:num.reps)  {
     mn            <- SIG.inv %*% (t(X) %*% (Z-psi)) 
     Mb            <- t(aa) %*% array(rnorm(p), c(p, 1)) + mn 
     beta[M+1, ]   <- t(Mb) 
-    bb            <- diag( sqrt( sigma.sq*tau.sq/(A.K + sigma.sq) ) )
-    meta          <- (1/sigma.sq) * (bb^2) %*% (Z-X%*%beta[M+1,])[A.K] 
-    eta           <- t(bb) %*% array(rnorm(K), c(K, 1)) + meta 
+    
+    A.m1          <- matrix(0, nrow=n, ncol=n)
+    for (i in 1:n){ A.m1[i,A.n[i]] <- 1}
+    A.K.m         <- A.m1[,which(apply(A.m1,2,sum)>0)]
+    S.eta.inv     <- 1/sigma.sq *t(A.K.m) %*% A.K.m + diag(1/tau.sq, nrow=K)
+    S.eta         <- solve(S.eta.inv)
+    bb            <- chol(S.eta) 
+    meta          <- 1/sigma.sq * S.eta %*% t(A.K.m) %*% (Z-X%*%beta[M+1,])
+    eta           <- t(bb) %*% array(rnorm(K), c(K, 1)) + meta
+    psi           <- A.K.m %*% eta
+
     tau.sq        <- rinvgamma(1,shape=(K)/2+a1,scale=sum(eta^2)/2+b1)
     # tau.sq can be "inf" and needs to be bound: large number: 1.7e+100
     if(is.finite(tau.sq)==FALSE) tau.sq <- 1.7e+100
@@ -179,6 +193,20 @@ for (M in 1:num.reps)  {
     m.save <- c(m.save,m) 
      if (M %% 100 == 0) print(paste("finished iteration",M))
 }
+
+   beta.post <- apply(beta[(round(num.reps/2)+1):(num.reps+1),],2,mean)
+   beta.sd   <- apply(beta[(round(num.reps/2)+1):(num.reps+1),],2,sd)
+   Y.hat     <- c(qnorm(X %*% beta.post))
+   resid     <- c(Y - Y.hat)
+   
+   K.est     <- c()
+for (l in 1:length(m.save)){
+   K.est[l] <- m.save[l]*sum(1/seq(m.save[l],m.save[l]+n-1,by=1))	}
+   K.post   <- mean(K.est[round(length(m.save)/2):length(m.save)])
+   K.sd     <- sd(K.est[round(length(m.save)/2):length(m.save)])
+   
+   out <- list(coefficients= beta.post, standard.error = beta.sd, fitted.values = Y.hat, residuals = resid, K.est = K.post, K.sd = K.sd)
+   out
 
 } # END OF glmdm.probit FUNCTION
 

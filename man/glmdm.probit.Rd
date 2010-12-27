@@ -2,13 +2,12 @@
 \title{glmdm.probit}
 \alias{glmdm.probit}
 \description{R code for simulation of GLMDM}
-\usage{glmdm.probit(Y, X, num.reps=1000, log=TRUE, a1=3, b1=2, d=0.25, MM=15,VV=30,...)}
+\usage{glmdm.probit(Y, X, num.reps=1000, a1=3, b1=2, d=0.25, MM=15,VV=30,...)}
 
 \arguments{
     \item{Y}{Y}
     \item{X}{X}
     \item{num.reps}{num.reps}
-    \item{log}{log}
     \item{a1}{a1}
     \item{b1}{b1}
     \item{d}{d}
