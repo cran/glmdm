@@ -1,12 +1,3 @@
-
-import(MASS)
-import(msm)
-import(mvtnorm)
-import(e1071)
-import(coda)
-import(MCMCpack)
-import(class)
-import(lattice)
-
 export (glmdm.linear,
-        glmdm.probit)
+        glmdm.probit
+        )

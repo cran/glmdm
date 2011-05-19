@@ -1,32 +1,157 @@
-
 ####################################################################################################
-# R CODE FOR SIMULATION OF GLMDM, (c) Kyung, Casella, and Gill, February 2008
-####################################################################################################
-
-####################################################################################################
-# SETUP UP DATA 
-####################################################################################################
-
-#glm.out  <- glm(Y ~ X[,-1],family=binomial(link=probit))
-#hat.beta <- coefficients(summary(glm.out))[,1]
-#hat.var  <- (coefficients(summary(glm.out))[,2])^2
-
-####################################################################################################
-# SETUP glmdm UP DATA 
+#  START glmdm.probit FUNCTION
 ####################################################################################################
 glmdm.probit <- function(Y, X, num.reps=1000, a1=3, b1=2, d=0.25, MM=15,VV=30,...) {
-# SET QUANTITIES FROM DATA
-#n <- nrow(X); K <- ncol(X)
-#beta <- runif(K,-3,3)
-#mu <- 0; tau <- 1; 
+
+#########################################################################
+# FUNCTIONS 
+#########################################################################
+# rdirichlet from LearBayes (04/21/2011)
+rdirichlet <- function (n, alpha) 
+{
+    k = length(alpha)
+    z = array(0, dim = c(n, k))
+    s = array(0, dim = c(n, 1))
+    for (i in 1:k) {
+        z[, i] = rgamma(n, shape = alpha[i])
+        s = s + z[, i]
+    }
+    for (i in 1:k) {
+        z[, i] = z[, i]/s
+    }
+    return(z)
+}
+
+# rdiscrete from e1071 (04/21/2011)
+rdiscrete <- function (n, probs, values = 1:length(probs), ...) 
+{
+    sample(values, size = n, replace = TRUE, prob = probs)
+}
+
+# rinvgamma from MCMCpack (04/21/2011)
+rinvgamma <- function (n, shape, scale = 1) 
+{
+    return(1/rgamma(n = n, shape = shape, rate = scale))
+}
+
+# rmvnorm from mvtnorm (04/21/2011)
+rmvnorm <- function (n, mean = rep(0, nrow(sigma)), sigma = diag(length(mean)), 
+    method = c("eigen", "svd", "chol")) 
+{
+    if (!isSymmetric(sigma, tol = sqrt(.Machine$double.eps))) {
+        stop("sigma must be a symmetric matrix")
+    }
+    if (length(mean) != nrow(sigma)) {
+        stop("mean and sigma have non-conforming size")
+    }
+    sigma1 <- sigma
+    dimnames(sigma1) <- NULL
+    if (!isTRUE(all.equal(sigma1, t(sigma1)))) {
+        warning("sigma is numerically not symmetric")
+    }
+    method <- match.arg(method)
+    if (method == "eigen") {
+        ev <- eigen(sigma, symmetric = TRUE)
+        if (!all(ev$values >= -sqrt(.Machine$double.eps) * abs(ev$values[1]))) {
+            warning("sigma is numerically not positive definite")
+        }
+        retval <- ev$vectors %*% diag(sqrt(ev$values), length(ev$values)) %*% 
+            t(ev$vectors)
+    }
+    else if (method == "svd") {
+        sigsvd <- svd(sigma)
+        if (!all(sigsvd$d >= -sqrt(.Machine$double.eps) * abs(sigsvd$d[1]))) {
+            warning("sigma is numerically not positive definite")
+        }
+        retval <- t(sigsvd$v %*% (t(sigsvd$u) * sqrt(sigsvd$d)))
+    }
+    else if (method == "chol") {
+        retval <- chol(sigma, pivot = TRUE)
+        o <- order(attr(retval, "pivot"))
+        retval <- retval[, o]
+    }
+    retval <- matrix(rnorm(n * ncol(sigma)), nrow = n) %*% retval
+    retval <- sweep(retval, 2, mean, "+")
+    colnames(retval) <- names(mean)
+    retval
+}
+
+# rtnorm from msm (04/21/2011)
+rtnorm <- function (n, mean = 0, sd = 1, lower = -Inf, upper = Inf) 
+{
+    if (length(n) > 1) 
+        n <- length(n)
+    mean <- rep(mean, length = n)
+    sd <- rep(sd, length = n)
+    lower <- rep(lower, length = n)
+    upper <- rep(upper, length = n)
+    lower <- (lower - mean)/sd
+    upper <- (upper - mean)/sd
+    ind <- seq(length = n)
+    ret <- numeric(n)
+    alg <- ifelse(lower > upper, -1, ifelse(((lower < 0 & upper == 
+        Inf) | (lower == -Inf & upper > 0) | (is.finite(lower) & 
+        is.finite(upper) & (lower < 0) & (upper > 0) & (upper - 
+        lower > sqrt(2 * pi)))), 0, ifelse((lower >= 0 & (upper > 
+        lower + 2 * sqrt(exp(1))/(lower + sqrt(lower^2 + 4)) * 
+            exp((lower * 2 - lower * sqrt(lower^2 + 4))/4))), 
+        1, ifelse(upper <= 0 & (-lower > -upper + 2 * sqrt(exp(1))/(-upper + 
+            sqrt(upper^2 + 4)) * exp((upper * 2 - -upper * sqrt(upper^2 + 
+            4))/4)), 2, 3))))
+    ind.nan <- ind[alg == -1]
+    ind.no <- ind[alg == 0]
+    ind.expl <- ind[alg == 1]
+    ind.expu <- ind[alg == 2]
+    ind.u <- ind[alg == 3]
+    ret[ind.nan] <- NaN
+    while (length(ind.no) > 0) {
+        y <- rnorm(length(ind.no))
+        done <- which(y >= lower[ind.no] & y <= upper[ind.no])
+        ret[ind.no[done]] <- y[done]
+        ind.no <- setdiff(ind.no, ind.no[done])
+    }
+    stopifnot(length(ind.no) == 0)
+    while (length(ind.expl) > 0) {
+        a <- (lower[ind.expl] + sqrt(lower[ind.expl]^2 + 4))/2
+        z <- rexp(length(ind.expl), a) + lower[ind.expl]
+        u <- runif(length(ind.expl))
+        done <- which((u <= exp(-(z - a)^2/2)) & (z <= upper[ind.expl]))
+        ret[ind.expl[done]] <- z[done]
+        ind.expl <- setdiff(ind.expl, ind.expl[done])
+    }
+    stopifnot(length(ind.expl) == 0)
+    while (length(ind.expu) > 0) {
+        a <- (-upper[ind.expu] + sqrt(upper[ind.expu]^2 + 4))/2
+        z <- rexp(length(ind.expu), a) - upper[ind.expu]
+        u <- runif(length(ind.expu))
+        done <- which((u <= exp(-(z - a)^2/2)) & (z <= -lower[ind.expu]))
+        ret[ind.expu[done]] <- -z[done]
+        ind.expu <- setdiff(ind.expu, ind.expu[done])
+    }
+    stopifnot(length(ind.expu) == 0)
+    while (length(ind.u) > 0) {
+        z <- runif(length(ind.u), lower[ind.u], upper[ind.u])
+        rho <- ifelse(lower[ind.u] > 0, exp((lower[ind.u]^2 - 
+            z^2)/2), ifelse(upper[ind.u] < 0, exp((upper[ind.u]^2 - 
+            z^2)/2), exp(-z^2/2)))
+        u <- runif(length(ind.u))
+        done <- which(u <= rho)
+        ret[ind.u[done]] <- z[done]
+        ind.u <- setdiff(ind.u, ind.u[done])
+    }
+    stopifnot(length(ind.u) == 0)
+    ret * sd + mean
+}
+
+###############################
+# Basic info from data
+###############################
 n <- nrow(X)
 # For the prior of m, we use Gamma(a,b)
 # Here ab=MM and ab^2=VV. 
 Sh <- (MM^2)/VV
 Sc <- VV/MM
 
-#B <- Y
-#A <- X
 ####################################################################################################
 # RUN A GLM TO GET hat.beta and hat.var
 ####################################################################################################
@@ -38,6 +163,8 @@ hat.var  <- (coefficients(summary(glm.out))[,2])^2
 ####################################################################################################
 # FIX PRIOR DISTRIBUTIONS AND PRIOR PARAMETERS
 ####################################################################################################
+X  <- cbind(1,X) #WITH DATA, INTERCEPT TERM NEEDS TO BE ADDED
+
 # PRE-LOOP EFFICIENCIES
 tau.sq        <- rinvgamma(1,shape=a1,scale=b1)
 tau           <- sqrt(tau.sq)
@@ -51,12 +178,11 @@ SIG.inv       <- solve(SIG)								# INVERT HERE FOR EFFICIENCY
 Z             <- rep(NA,length=n)							# Z TO FILL-IN DURING LOOPING
 beta          <- rmvnorm(1, mean=hat.beta, sigma=diag(hat.var))				# STARTING VALUES FROM ABOVE
 beta          <- rbind( beta,matrix(rep(NA,num.reps*ncol(beta)),ncol=ncol(beta)) )	# MATRIX TO FILL IN DURING LOOP
-q          <- c(rdirichlet(1, rep(1, n)))					# PROBABILITY OF ASSIGNMENT
-A.n 	      <- sample(1:n,n,replace=TRUE,q)	
-			 		# CREATES THE ASSIGNMENTS.
+q             <- c(rdirichlet(1, rep(1, n)))					# PROBABILITY OF ASSIGNMENT
+A.n 	      <- sample(1:n,n,replace=TRUE,q)	# CREATES THE ASSIGNMENTS.
 A.K 	      <- table(A.n)						 		# CREATES THE LIST OF OCCUPIED
 A.K.labels    <- as.numeric(names(A.K))  						# LOCATIONS OF OCCUPIED
-K	      <- length(A.K)								# NUMBER OF OCCUPIED TABLES
+K	          <- length(A.K)								# NUMBER OF OCCUPIED TABLES
 B             <- rep(0,length=n)							# LENGTH n FOR ALL CASES
 B[A.K.labels] <- 1									# 1 WHERE OCCUPIED >0
 B             <- B*rnorm(n,0,tau)							# ASSIGN psi VALUES TO OCCUPIED
@@ -66,13 +192,13 @@ like.K        <- 0									# LOG-LIKE STARTS AT ZERO
 X.beta1       <- X%*%beta[1,]								# MULTIPLY X AND beta IN ADVANCE
 for (i in 1:n)  
     like.K <- like.K + Y[i] * pnorm( X.beta1[i] + psi[i],log=TRUE) + 
-		(1-Y[i]) * (1 - pnorm( X.beta1[i] + psi[i] )) + 
-		dnorm(psi[i], mean=0, sd=tau,log=TRUE)
+              (1-Y[i]) * (1 - pnorm( X.beta1[i] + psi[i] )) + 
+		      dnorm(psi[i], mean=0, sd=tau,log=TRUE)
 like.K <- exp(like.K + sum(lgamma(A.K)))
 
 # SETUP TO SAVE GIBBS SAMPLER VALUES
-tau.sq.post <- psi.post <- xi.post <- K.save <- like.K.save <- m.save <- NULL 
-
+tau.sq.post <- xi.post <- K.save <- like.K.save <- m.save <- NULL 
+psi.post <- matrix(rep(NA,num.reps*n),ncol=n) 
 ####################################################################################################
 # NEW POSTERIOR FOR m FUNCTION
 ####################################################################################################
@@ -91,8 +217,6 @@ for (M in 1:num.reps)  {
     #print("M-H ON THE 'A' MATRIX")
     p.A.old  <- (m^K)
     f.y.old  <- like.K
-    #mul.old  <- cbind(nk,q)
-    #mul.old  <- mul.old[nk>0]
     mult.old <- dmultinom(x=A.K, prob=q[A.K.labels])
  	  
     #print("CREATE NEW 'A' MATRIX, 'can' STANDS FOR CANDIDATE") 
@@ -105,8 +229,8 @@ for (M in 1:num.reps)  {
     B                 <- rep(0,length=n)                                                  
     B[A.K.labels.can] <- 1                                                               
     B                 <- B*rnorm(n,0,tau)                                               
+    nk.can            <- rep(0,n); for (i in 1:n) nk.can[A.n.can[i]] <- nk.can[A.n.can[i]] + 1
     psi.can           <- B[A.n.can]                                                        
-    p.A.can           <- (m^K.can)  
     like.K.can        <- 0                                                                      
     X.betaM           <- X%*%beta[M,]                                                          
     for (i in 1:n)
@@ -115,8 +239,9 @@ for (M in 1:num.reps)  {
                          dnorm(psi.can[i], mean=0, sd=tau,log=TRUE)
     like.K.can        <- exp(like.K.can + sum(lgamma(A.K.can)))
 
+    p.A.can           <- (m^K.can)  
     f.y.can           <- like.K.can
-    mult.can<-dmultinom(x=A.K.can, prob=new.q[A.K.labels.can])
+    mult.can          <-dmultinom(x=A.K.can, prob=new.q[A.K.labels.can])
 
     #print("UPDATE 'A' and 'K', CREATE LIKELIHOOD")
     p.ratio <- p.A.can/p.A.old; f.ratio <- f.y.can/f.y.old; mult.ratio <- mult.can/mult.old
@@ -129,12 +254,13 @@ for (M in 1:num.reps)  {
     #print("UPDATE rho")
     rho <- p.ratio * f.ratio * mult.ratio 
     if (rho>runif(1))   {
-	A.n        <- A.n.can 		# A.n <- 1:n for regular random effects model
-   	A.K        <- A.K.can
-    	A.K.labels <- A.K.labels.can    
-    	K          <- K.can
-    	psi        <- psi.can 
-    	like.K     <- like.K.can
+    	A.n        <- A.n.can  # A.n <- 1:n for regular random effects model
+   	    A.K        <- A.K.can
+        A.K.labels <- A.K.labels.can    
+        K          <- K.can
+        nk         <- nk.can
+        psi        <- psi.can 
+        like.K     <- like.K.can
     }
 
     #print("UPDATE 'z': Truncated Normal")
@@ -158,6 +284,7 @@ for (M in 1:num.reps)  {
     meta          <- 1/sigma.sq * S.eta %*% t(A.K.m) %*% (Z-X%*%beta[M+1,])
     eta           <- t(bb) %*% array(rnorm(K), c(K, 1)) + meta
     psi           <- A.K.m %*% eta
+    psi.post[M, ] <- t(psi)
 
     tau.sq        <- rinvgamma(1,shape=(K)/2+a1,scale=sum(eta^2)/2+b1)
     # tau.sq can be "inf" and needs to be bound: large number: 1.7e+100
@@ -196,17 +323,48 @@ for (M in 1:num.reps)  {
 
    beta.post <- apply(beta[(round(num.reps/2)+1):(num.reps+1),],2,mean)
    beta.sd   <- apply(beta[(round(num.reps/2)+1):(num.reps+1),],2,sd)
-   Y.hat     <- c(qnorm(X %*% beta.post))
+   psi.hat   <- apply(psi.post[(round(num.reps/2)+1):(num.reps),],2,mean)
+   p.hat     <- c(X %*% beta.post) + c(psi.hat)
+   suppressWarnings(Y.hat     <- c(pnorm(p.hat)))
    resid     <- c(Y - Y.hat)
    
    K.est     <- c()
-for (l in 1:length(m.save)){
+   for (l in 1:length(m.save)){
    K.est[l] <- m.save[l]*sum(1/seq(m.save[l],m.save[l]+n-1,by=1))	}
    K.post   <- mean(K.est[round(length(m.save)/2):length(m.save)])
    K.sd     <- sd(K.est[round(length(m.save)/2):length(m.save)])
-   
+      
+   graph.summary <- function (in.object, alpha = 0.05, digits=3) # DESIGNED BY NEAL, CODED BY JEFF
+{
+    lo <- in.object$coefficient - qnorm(1-alpha/2) * in.object$standard.error
+    hi <- in.object$coefficient + qnorm(1-alpha/2) * in.object$standard.error
+    out.mat <- round(cbind(in.object$coefficient, in.object$standard.error, lo, hi),digits)
+    blanks <- "                                                                          "
+    dashes <- "--------------------------------------------------------------------------"
+    bar.plot <- NULL
+    scale.min <- floor(min(out.mat[,3])); scale.max <- ceiling(max(out.mat[,4]))
+    for (i in 1:nrow(out.mat))  {
+        ci.half.length <- abs(out.mat[i,1]-out.mat[i,3])
+        ci.start <- out.mat[i,1] - ci.half.length
+        ci.stop <- out.mat[i,1] + ci.half.length
+        bar <- paste("|",substr(dashes,1,ci.half.length), "o", substr(dashes,1,ci.half.length), "|", sep="", collapse="")
+        start.buf <- substr(blanks,1,round(abs(scale.min - ci.start)))
+        stop.buf <- substr(blanks,1,round(abs(scale.max - ci.stop)))
+        bar.plot <- rbind( bar.plot, paste(start.buf,bar, stop.buf, sep="", collapse="") )
+    }
+    out.df <- data.frame( matrix(NA,nrow=nrow(out.mat),ncol=ncol(out.mat)), bar.plot[1:length(bar.plot)] )
+    out.df[1:nrow(out.mat),1:ncol(out.mat)] <- out.mat
+    CI.label <- paste( "CIs:", substr(blanks,1,abs(scale.min)-2-4),"ZE+RO",
+        substr(blanks,1,abs(scale.max)-2), sep="", collapse="" )
+    dimnames(out.df)[[1]] <- names(in.object$coefficient)
+    dimnames(out.df)[[2]] <- c("Coef","Std.Err.", paste(1-alpha,"Lower"),paste(1-alpha,"Upper"),CI.label)
+    print(out.df)
+    cat("\n")
+    cat( paste("Estimated K: ",round(in.object$K.est,2),"Std.Err. of K", round(in.object$K.sd, 2), "\n") )
+    cat("\n")
+}
    out <- list(coefficients= beta.post, standard.error = beta.sd, fitted.values = Y.hat, residuals = resid, K.est = K.post, K.sd = K.sd)
-   out
-
+   graph.summary(out)
+   print(out)
 } # END OF glmdm.probit FUNCTION
 

@@ -40,6 +40,7 @@
 \alias{beta}
 \alias{beta.post}
 \alias{d}
+\alias{glmdm.out}
 \alias{glm.out}
 \alias{hat.beta}
 \alias{hat.var}
@@ -47,6 +48,7 @@
 \alias{initial.m}
 \alias{K}
 \alias{K.save}
+\alias{linear}
 \alias{like}
 \alias{like.K}
 \alias{like.K.save}
@@ -62,6 +64,7 @@
 \alias{p}
 \alias{psi}
 \alias{psi.post}
+\alias{.Random.seed}
 \alias{q}
 \alias{Sc}
 \alias{Sh}
@@ -89,7 +92,7 @@
 data(scotvote)
 attach(scotvote)
 Y <- PerYesParl
-X <- cbind(rep(1,length=length(Y)),PrivateHousingStarts,CouncilTax,Percentage5to15,
+X <- cbind(PrivateHousingStarts,CouncilTax,Percentage5to15,
            PrimaryPTRatio,PerBirthsOut,PerClaimantFemale)
 detach(scotvote)
 glmdm.linear(Y,X,num.reps=5000,log=FALSE) 

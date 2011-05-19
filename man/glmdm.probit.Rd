@@ -69,14 +69,16 @@
 data(ssas)
 attach(ssas)
 Y <- ssas[,18]
-X <- cbind(househld,rsex,rage,relgsums,ptyallgs,idlosem,marrmus,ukintnat,natinnat,voiceuk3,nhssat,hincdif2,unionsa,whrbrn,hedqual2)
+X <- cbind(ssas$househld,ssas$rsex,ssas$rage,ssas$relgsums,ssas$ptyallgs,ssas$idlosem,
+                 ssas$marrmus,ssas$ukintnat,ssas$natinnat,ssas$voiceuk3,ssas$nhssat,ssas$hincdif2,
+                 ssas$unionsa,ssas$whrbrn,ssas$hedqual2)
 detach(ssas)
 glmdm.out <- glmdm.probit(Y,X,num.reps=10000)
 
 
 data(asia)
 Y <- asia[,1]
-X <- cbind( rep(1,length=length(Y)), as.matrix(asia[,-1]) )
+X <- as.matrix(asia[,-1]) 
 glmdm.out <- glmdm.probit(Y,X,num.reps=10000,log=TRUE) 
 }
 }

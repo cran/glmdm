@@ -1,27 +1,89 @@
-
-####################################################################################################
-# R CODE FOR SIMULATION OF GLMDM, (c) Kyung, Casella, and Gill, February 2008
-####################################################################################################
-
-
-
-
-
-
 ####################################################################################################
 # START glmdm.linear FUNCTION
 ####################################################################################################
 glmdm.linear <- function(Y, X, family=linear, num.reps=1000, a1=3, b1=2, d=0.25, MM=15,VV=30,...) {
-# SET QUANTITIES FROM DATA
-#n <- nrow(X); K <- ncol(X)
-#beta <- runif(K,-3,3)
-#mu <- 0; tau <- 1; 
+
+#########################################################################
+# FUNCTIONS 
+#########################################################################
+# rdirichlet from LearBayes (04/21/2011)
+rdirichlet <- function (n, alpha) 
+{
+    k = length(alpha)
+    z = array(0, dim = c(n, k))
+    s = array(0, dim = c(n, 1))
+    for (i in 1:k) {
+        z[, i] = rgamma(n, shape = alpha[i])
+        s = s + z[, i]
+    }
+    for (i in 1:k) {
+        z[, i] = z[, i]/s
+    }
+    return(z)
+}
+
+# rdiscrete from e1071 (04/21/2011)
+rdiscrete <- function (n, probs, values = 1:length(probs), ...) 
+{
+    sample(values, size = n, replace = TRUE, prob = probs)
+}
+
+# rinvgamma from MCMCpack (04/21/2011)
+rinvgamma <- function (n, shape, scale = 1) 
+{
+    return(1/rgamma(n = n, shape = shape, rate = scale))
+}
+
+# rmvnorm from mvtnorm (04/21/2011)
+rmvnorm <- function (n, mean = rep(0, nrow(sigma)), sigma = diag(length(mean)), 
+    method = c("eigen", "svd", "chol")) 
+{
+    if (!isSymmetric(sigma, tol = sqrt(.Machine$double.eps))) {
+        stop("sigma must be a symmetric matrix")
+    }
+    if (length(mean) != nrow(sigma)) {
+        stop("mean and sigma have non-conforming size")
+    }
+    sigma1 <- sigma
+    dimnames(sigma1) <- NULL
+    if (!isTRUE(all.equal(sigma1, t(sigma1)))) {
+        warning("sigma is numerically not symmetric")
+    }
+    method <- match.arg(method)
+    if (method == "eigen") {
+        ev <- eigen(sigma, symmetric = TRUE)
+        if (!all(ev$values >= -sqrt(.Machine$double.eps) * abs(ev$values[1]))) {
+            warning("sigma is numerically not positive definite")
+        }
+        retval <- ev$vectors %*% diag(sqrt(ev$values), length(ev$values)) %*% 
+            t(ev$vectors)
+    }
+    else if (method == "svd") {
+        sigsvd <- svd(sigma)
+        if (!all(sigsvd$d >= -sqrt(.Machine$double.eps) * abs(sigsvd$d[1]))) {
+            warning("sigma is numerically not positive definite")
+        }
+        retval <- t(sigsvd$v %*% (t(sigsvd$u) * sqrt(sigsvd$d)))
+    }
+    else if (method == "chol") {
+        retval <- chol(sigma, pivot = TRUE)
+        o <- order(attr(retval, "pivot"))
+        retval <- retval[, o]
+    }
+    retval <- matrix(rnorm(n * ncol(sigma)), nrow = n) %*% retval
+    retval <- sweep(retval, 2, mean, "+")
+    colnames(retval) <- names(mean)
+    retval
+}
+
+###############################
+# Basic info from data
+###############################
 n <- nrow(X)
 # For the prior of m, we use Gamma(a,b)
 # Here ab=MM and ab^2=VV. 
 Sh <- (MM^2)/VV
 Sc <- VV/MM
-
 ####################################################################################################
 # RUN A GLM TO GET hat.beta and hat.var
 ####################################################################################################
@@ -33,6 +95,7 @@ hat.var  <- (coefficients(summary(glm.out))[,2])^2
 ####################################################################################################
 # FIX PRIOR DISTRIBUTIONS AND PRIOR PARAMETERS
 ####################################################################################################
+X  <- cbind(1,X) #WITH DATA, INTERCEPT TERM NEEDS TO BE ADDED
 
 # PRE-LOOP EFFICIENCIES
 tau.sq        <- rinvgamma(1,shape=a1,scale=b1)
@@ -48,11 +111,11 @@ SIG           <- t(X)%*%X + diag(1/sigma.beta.sq, nrow=ncol(X))				# VAR/COVAR M
 SIG.inv       <- solve(SIG)								# INVERT HERE FOR EFFICIENCY
 beta          <- rmvnorm(1, mean=hat.beta, sigma=diag(hat.var))				# STARTING VALUES FROM ABOVE
 beta          <- rbind( beta,matrix(rep(NA,num.reps*ncol(beta)),ncol=ncol(beta)) )	# MATRIX TO FILL IN DURING LOOP
-q          <- c(rdirichlet(1, rep(1, n)))					# PROBABILITY OF ASSIGNMENT
+q             <- c(rdirichlet(1, rep(1, n)))					# PROBABILITY OF ASSIGNMENT
 A.n 	      <- sample(1:n,n,replace=TRUE,q)				 		# CREATES THE ASSIGNMENTS.
 A.K 	      <- table(A.n)						 		# CREATES THE LIST OF OCCUPIED
 A.K.labels    <- as.numeric(names(A.K))  						# LOCATIONS OF OCCUPIED
-K	      <- length(A.K)								# NUMBER OF OCCUPIED TABLES
+K	          <- length(A.K)								# NUMBER OF OCCUPIED TABLES
 B             <- rep(0,length=n)							# LENGTH n FOR ALL CASES
 B[A.K.labels] <- 1									# 1 WHERE OCCUPIED >0
 B             <- B*rnorm(n,0,tau)							# ASSIGN psi VALUES TO OCCUPIED
@@ -65,8 +128,8 @@ for (i in 1:n)
 like.K <- exp(like.K + sum(lgamma(A.K)))
 
 # SETUP TO SAVE GIBBS SAMPLER VALUES
-tau.sq.post <- psi.post <- xi.post <- K.save <- like.K.save <- m.save <- NULL 
-
+tau.sq.post <- xi.post <- K.save <- like.K.save <- m.save <- NULL 
+psi.post <- matrix(rep(NA,num.reps*n),ncol=n) 
 ####################################################################################################
 # NEW POSTERIOR FOR m FUNCTION
 ####################################################################################################
@@ -85,9 +148,8 @@ for (M in 1:num.reps)  {
     #print("M-H ON THE 'A' MATRIX")
     p.A.old  <- (m^K)
     f.y.old  <- like.K
-    #mul.old  <- cbind(nk,q)
-    #mul.old  <- mul.old[nk>0]
     mult.old <- dmultinom(x=A.K, prob=q[A.K.labels])
+
     #print("CREATE NEW 'A' MATRIX, 'can' STANDS FOR CANDIDATE") 
     pq                <- nk +1   
     new.q             <- rdirichlet(1, pq)
@@ -98,18 +160,16 @@ for (M in 1:num.reps)  {
     B                 <- rep(0,length=n)                                                  
     B[A.K.labels.can] <- 1                                                               
     B                 <- B*rnorm(n,0,tau)                                               
+    nk.can            <- rep(0,n); for (i in 1:n) nk.can[A.n.can[i]] <- nk.can[A.n.can[i]] + 1
     psi.can           <- B[A.n.can]                                                        
     p.A.can           <- (m^K.can)  
     like.K.can        <- 0                                                                      
     X.betaM           <- X%*%beta[M,]                                                          
     for (i in 1:n)
-	like.K.can    <- like.K.can + dnorm(Y[i], mean=X.betaM[i] + psi.can[i], log=TRUE) + dnorm(psi.can[i], mean=0, sd=tau,log=TRUE)
-        #like.K.can    <- like.K.can + Y[i] * pnorm( X.betaM[i] + psi.can[i],log=TRUE) +
-        #                 (1-Y[i]) * (1 - pnorm( X.betaM[i] + psi.can[i] )) +
-        #                 dnorm(psi.can[i], mean=0, sd=tau,log=TRUE)
+	like.K.can        <- like.K.can + dnorm(Y[i], mean=X.betaM[i] + psi.can[i], log=TRUE) + dnorm(psi.can[i], mean=0, sd=tau,log=TRUE)
     like.K.can        <- exp(like.K.can + sum(lgamma(A.K.can)))
     f.y.can           <- like.K.can
-    mult.can<-dmultinom(x=A.K.can, prob=new.q[A.K.labels.can])
+    mult.can          <- dmultinom(x=A.K.can, prob=new.q[A.K.labels.can])
 
     #print("UPDATE 'A' and 'K', CREATE LIKELIHOOD")
     p.ratio <- p.A.can/p.A.old; f.ratio <- f.y.can/f.y.old; mult.ratio <- mult.can/mult.old
@@ -122,20 +182,14 @@ for (M in 1:num.reps)  {
     #print("UPDATE rho")
     rho <- p.ratio * f.ratio * mult.ratio 
     if (rho>runif(1))   {
-	A.n        <- A.n.can 		# A.n <- 1:n for regular random effects model
-   	A.K        <- A.K.can
+	    A.n        <- A.n.can 		# A.n <- 1:n for regular random effects model
+   	    A.K        <- A.K.can
     	A.K.labels <- A.K.labels.can    
-    	K          <- K.can
-    	psi        <- psi.can 
-    	like.K     <- like.K.can
+        K          <- K.can
+        nk         <- nk.can
+        psi        <- psi.can 
+        like.K     <- like.K.can
     }
-
-    #print("UPDATE 'z': Truncated Normal")
-#    for (j in 1:n){
-#	mean = X[j,]%*%beta[M,] + psi[j]
-#        Z[j] <- rtnorm(1, mean=mean, sd=1, lower=-Inf, upper=0)
-#        if (Y[j]==1) Z[j] <- rtnorm(1, mean=mean, sd=1, lower=0, upper=Inf)
-#    }
 
     #print("UPDATE 'beta', 'tau' AND 'eta'")
     mn            <- SIG.inv %*% (t(X) %*% (Y-psi)) 
@@ -151,7 +205,8 @@ for (M in 1:num.reps)  {
     meta          <- 1/sigma.sq * S.eta %*% t(A.K.m) %*% (Y-X%*%beta[M+1,])
     eta           <- t(bb) %*% array(rnorm(K), c(K, 1)) + meta
     psi           <- A.K.m %*% eta
-
+    psi.post[M, ] <- t(psi)
+    
     tau.sq        <- rinvgamma(1,shape=(K)/2+a1,scale=sum(eta^2)/2+b1)
     # If tau.sq is infinity; 1.7e+100 is reasonable big?!
     if(is.finite(tau.sq)==FALSE) tau.sq <- 1.7e+100
@@ -185,16 +240,68 @@ for (M in 1:num.reps)  {
 }
    beta.post <- apply(beta[(round(num.reps/2)+1):(num.reps+1),],2,mean)
    beta.sd   <- apply(beta[(round(num.reps/2)+1):(num.reps+1),],2,sd)
-   Y.hat     <- c(X %*% beta.post)
+   psi.hat   <- apply(psi.post[(round(num.reps/2)+1):(num.reps),],2,mean)
+   Y.hat     <- c(X %*% beta.post) + c(psi.hat)
    resid     <- c(Y - Y.hat)
    
    K.est     <- c()
-for (l in 1:length(m.save)){
+   for (l in 1:length(m.save)){
    K.est[l] <- m.save[l]*sum(1/seq(m.save[l],m.save[l]+n-1,by=1))	}
    K.post   <- mean(K.est[round(length(m.save)/2):length(m.save)])
    K.sd     <- sd(K.est[round(length(m.save)/2):length(m.save)])
    
+   
    out <- list(coefficients= beta.post, standard.error = beta.sd, fitted.values = Y.hat, residuals = resid, K.est = K.post, K.sd = K.sd)
-   out
+
+   graph.summary <- function (in.object, alpha = 0.05, digits=3) # DESIGNED BY NEAL, CODED BY JEFF
+{
+    lo <- in.object$coefficient - qnorm(1-alpha/2) * in.object$standard.error
+    hi <- in.object$coefficient + qnorm(1-alpha/2) * in.object$standard.error
+    out.mat <- round(cbind(in.object$coefficient, in.object$standard.error, lo, hi),digits)
+    blanks <- "                                                                          "
+    dashes <- "--------------------------------------------------------------------------"
+    bar.plot <- NULL
+    scale.min <- floor(min(out.mat[,3])); scale.max <- ceiling(max(out.mat[,4]))
+    for (i in 1:nrow(out.mat))  {
+        ci.half.length <- abs(out.mat[i,1]-out.mat[i,3])
+        ci.start <- out.mat[i,1] - ci.half.length
+        ci.stop <- out.mat[i,1] + ci.half.length
+        bar <- paste("|",substr(dashes,1,ci.half.length), "o", substr(dashes,1,ci.half.length), "|", sep="", collapse="")
+        start.buf <- substr(blanks,1,round(abs(scale.min - ci.start)))
+        stop.buf <- substr(blanks,1,round(abs(scale.max - ci.stop)))
+        bar.plot <- rbind( bar.plot, paste(start.buf,bar, stop.buf, sep="", collapse="") )
+    }
+    rr     <- in.object$residuals
+    ff     <- in.object$fitted.values
+    mss    <- sum((ff - mean(ff))^2)
+    rss    <- sum((rr - mean(rr))^2)
+    n      <- length(rr)
+    p      <- length(lo)-1
+    df.int <- 1
+    rdf    <- n-p-df.int
+    resvar <- rss/rdf
+    se            <- sqrt(resvar)
+    r.squared     <- mss/(mss + rss)
+    adj.r.squared <- 1 - (1 - r.squared) * ((n - df.int)/rdf)
+    fstatistic    <- c((mss/(p - df.int))/resvar)
+    f.p.val       <- 1-pf(fstatistic,p,rdf)
+    
+    out.df <- data.frame( matrix(NA,nrow=nrow(out.mat),ncol=ncol(out.mat)), bar.plot[1:length(bar.plot)] )
+    out.df[1:nrow(out.mat),1:ncol(out.mat)] <- out.mat
+    CI.label <- paste( "CIs:", substr(blanks,1,abs(scale.min)-2-4),"ZE+RO",
+        substr(blanks,1,abs(scale.max)-2), sep="", collapse="" )
+    dimnames(out.df)[[1]] <- names(in.object$coefficient)
+    dimnames(out.df)[[2]] <- c("Coef","Std.Err.", paste(1-alpha,"Lower"),paste(1-alpha,"Upper"),CI.label)
+    print(out.df)
+    cat("\n")
+    cat( paste("Residual standard error : ",round(se, digits),"on",rdf,"degrees of freedom\n") )
+    cat( paste("Multiple R-squared : ",round(r.squared, digits),"  Adjusted R-squared:",round(adj.r.squared, digits),"\n") )
+    cat( paste("F-statistic: ",round(fstatistic,2),"on",p,"and",rdf,"DF", " p-value:", round(f.p.val, digits), "\n") )
+    cat( paste("Estimated K: ",round(in.object$K.est,2),"Std.Err. of K", round(in.object$K.sd, 2), "\n") )
+    cat("\n")
+    cat( paste("Residual Sum of Squares: ",round(rss, digits),"\n") )
+}
+  graph.summary(out)
+  print(out)
 } # END TO glmdm FUNCTION CALL
 
