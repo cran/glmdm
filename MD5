@@ -1,0 +1,17 @@
+2c744dffd279d7e9e0910ce594eb4f4f *CONTENTS
+f055744ceff8f0c6a466462745368b0c *DESCRIPTION
+cc8f5b7e36e5ee15627d1ae3859e740b *NAMESPACE
+86373875bbe38c751b4b60e27ac223ee *R/glmdm.R
+5bbb021a0840b13e1a150ece7e54400a *R/glmdm.linear.R
+06d85734834f854b588e0791fdc31939 *R/glmdm.probit.R
+41927097e9ad52c3ea1e04cdc3f68826 *R/zzz.R
+56ffe0efa1576cf53fedd4222453d137 *README
+95355591412b34157dd83d710ec33060 *data/asia.rda
+6dc68c0940a7705e539bead7f8d2841f *data/scotvote.rda
+0e4bace3297a4c404ec03dabe6203794 *data/ssas.rda
+966c1787b244574acc0d8c3afd15ed2e *inst/doc/ClusterProposal4.pdf
+f73fa90edda4a94a4d5422bb237e66c1 *inst/doc/sampling_schemes-2.pdf
+0c75e35e5023a929f2d5d102362b7f2b *man/asia.Rd
+56b0704c1c87bb0728a881ec2ba77126 *man/glmdm.Rd
+1a32f9a22c70a58a0b7309e6bacbd519 *man/scotvote.Rd
+a906934470c9e41c0df7a0229602f8e4 *man/ssas.Rd

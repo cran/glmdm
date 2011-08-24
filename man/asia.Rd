@@ -8,7 +8,7 @@
 \format{
      Asia data set
 \describe{
-  \item{AUT}{the dichotomous outcome of interest indicating whether not there was
+  \item{ATT}{the dichotomous outcome of interest indicating whether or not there was
      at least one violent terrorist act in a country/year pair.}
   \item{DEM}{the Polity IV 21-point democracy scale ranging from -10 indicating a hereditary monarchy to +10 indicating a fully consolidated democracy.  (Gurr, Marshall, and Jaggers 2003).}
   \item{FED}{is assigned zero if sub-national governments do not have substantial
