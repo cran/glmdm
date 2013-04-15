@@ -234,7 +234,7 @@ loglike.s <- function(m.v){lgamma(m.v)-lgamma(m.v+n) + dgamma(m.v, shape=Sh, sca
 if (eval(family)$family=="gaussian" & eval(family)$link=="identity") {
 
 	for (i in 1:n) { 
-        like.K <- like.K + dnorm(Y[i], mean=X.beta1[i] + psi[i], log=TRUE) + dnorm(psi[i], mean=0, sd=tau,log=TRUE)
+        like.K <- like.K + dnorm(Y[i], mean=X.beta1[i] + psi[i], log=TRUE) + dnorm(psi[i], mean=0, sd=tau, log=TRUE)
         like.K <- exp(like.K + sum(lgamma(A.K)))	
     }    
 
@@ -266,7 +266,7 @@ for (M in 1:num.reps)  {
     like.K.can        <- 0                                                                      
     X.betaM           <- X%*%beta[M,]                                                          
     for (i in 1:n)
-	    like.K.can    <- like.K.can + dnorm(Y[i], mean=X.betaM[i] + psi.can[i], log=TRUE) + dnorm(psi.can[i], mean=0, sd=tau,log=TRUE)
+	    like.K.can    <- like.K.can + dnorm(Y[i], mean=X.betaM[i] + psi.can[i], log=TRUE) + dnorm(psi.can[i], mean=0, sd=tau, log=TRUE)
     like.K.can        <- exp(like.K.can + sum(lgamma(A.K.can)))
     f.y.can           <- like.K.can
     mult.can          <- dmultinom(x=A.K.can, prob=new.q[A.K.labels.can])
@@ -355,7 +355,7 @@ else {
 	if (eval(family)$family=="binomial" & eval(family)$link=="probit") {
 		
 		for (i in 1:n) { 
-    		like.K <- like.K + Y[i] * pnorm( X.beta1[i] + psi[i],log=TRUE) + (1-Y[i]) * (1 - pnorm( X.beta1[i] + psi[i] )) + dnorm(psi[i], mean=0, sd=tau,log=TRUE)
+    		like.K <- like.K + Y[i] * pnorm( X.beta1[i] + psi[i], log.p=TRUE) + (1-Y[i]) * (1 - pnorm( X.beta1[i] + psi[i] )) + dnorm(psi[i], mean=0, sd=tau, log=TRUE)
 			like.K <- exp(like.K + sum(lgamma(A.K)))			
 	    }
 	    
@@ -386,9 +386,9 @@ for (M in 1:num.reps)  {
     like.K.can        <- 0                                                                      
     X.betaM           <- X%*%beta[M,]                                                          
     for (i in 1:n)
-        like.K.can    <- like.K.can + Y[i] * pnorm( X.betaM[i] + psi.can[i],log=TRUE) +
+        like.K.can    <- like.K.can + Y[i] * pnorm( X.betaM[i] + psi.can[i], log.p=TRUE) +
                          (1-Y[i]) * (1 - pnorm( X.betaM[i] + psi.can[i] )) +
-                         dnorm(psi.can[i], mean=0, sd=tau,log=TRUE)
+                         dnorm(psi.can[i], mean=0, sd=tau, log=TRUE)
     like.K.can        <- exp(like.K.can + sum(lgamma(A.K.can)))
 
     p.A.can           <- (m^K.can)  
@@ -510,63 +510,9 @@ for (M in 1:num.reps)  {
    
    out <- list(coefficients= beta.post, standard.error = beta.sd, fitted.values = Y.hat, residuals = resid, K.est = K.post, K.sd = K.sd, call=call, formula=formula, family=family) # ADD CALL, FORMULA, AND FAMILY IN THE OUTPUT (08/15/2011)
    
-   # REMOVE graph.summary AND DEFINE summary AS graph.summary (SEE BELOW)
-} # END TO glmdmEST FUNCTION CALL
+   
 
-
-
-#########################################################################
-# CREATE A GENERIC FUNCTION glmdm (08/03/2011)
-#########################################################################
-glmdm <- function(formula, family=gaussian, data, num.reps=1000, a1=3, b1=2, 
-	      d=0.25, MM=15, VV=30, ...) UseMethod("glmdm")
-
-glmdm.default <- function (x, y, ...) {
-	x <- as.matrix(x)
-	y <- as.numeric(y)
-	
-	est <- glmdmEST(Y=y, X=x, ...)
-	
-	est$call <- match.call()
-	
-	class(est) <- "glmdm"
-	est
-}
-
-
-
-#########################################################################
-# CREATE S FORMULAS FOR glmdm (08/03/2011)
-#########################################################################
-glmdm.formula <- function(formula, data=list(), ...) {
-	mf <- model.frame(formula=formula, data=data)
-	x <- model.matrix(attr(mf, "terms"), data=mf)[,-1]  # REMOVE THE INTERCEPT TERM SINCE IT IS ADDED IN LINE 180.
-	y <- model.response(mf)
-	
-	est <- glmdm.default(x, y, ...)
-	est$call <- match.call()
-	est$formula <- formula
-	est
-}
-
-
-
-#########################################################################
-# DEFINE PRINT METHOD FOR CLASS glmdm (08/15/2011)
-#########################################################################
-print.glmdm <- function(x, ...) {
-	cat("Call:\n")
-	print(x$call)
-	cat("\nCoefficients:\n")
-    print(x$coefficients)
-}
-
-
-
-#########################################################################
-# DEFINE SUMMARY METHOD FOR CLASS glmdm USING graph.summary (08/15/2011)
-#########################################################################
-summary.glmdm <- function(in.object, alpha = 0.05, digits=3, ...) # DESIGNED BY NEAL, CODED BY JEFF
+  graph.summary <- function(in.object, alpha = 0.05, digits=3, ...) # DESIGNED BY NEAL, CODED BY JEFF
 {
     lo <- in.object$coefficient - qnorm(1-alpha/2) * in.object$standard.error
     hi <- in.object$coefficient + qnorm(1-alpha/2) * in.object$standard.error
@@ -626,5 +572,28 @@ summary.glmdm <- function(in.object, alpha = 0.05, digits=3, ...) # DESIGNED BY 
     cat("\n")    	
     }                # END: IF GAUSSIAN FAMILY IS NOT TRUE
     
-}   # END TO summary FUNCTION CALL
+}   # END TO graph.summary FUNCTION CALL
+  graph.summary(out)
+#  return(out)
+
+
+} # END TO glmdmEST FUNCTION CALL
+
+
+
+#########################################################################
+# CREATE A GENERIC FUNCTION glmdm (08/03/2011)
+#########################################################################
+glmdm <- function(formula, family=gaussian, data, num.reps=1000, a1=3, b1=2, d=0.25, MM=15, VV=30, ...) {
+	mf <- model.frame(formula=formula, data=data)
+	x <- model.matrix(attr(mf, "terms"), data=mf)[,-1]  # REMOVE THE INTERCEPT TERM SINCE IT IS ADDED IN LINE 180.
+	y <- model.response(mf)
+	
+	est <- glmdmEST(Y=y, X=x, family=family, data=data, num.reps=num.reps, a1=a1, b1=b1, d=d, MM=MM, VV=VV, ...)
+	est$call <- match.call()
+	est$formula <- formula
+	class(est) <- "glmdm"
+	est	
+}
+
 

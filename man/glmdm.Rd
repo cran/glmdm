@@ -67,21 +67,21 @@
 
 \examples{
 \dontrun{
-{
+
+data(scotvote)
 glmdm.linear.out <- glmdm(PerYesParl ~ PrivateHousingStarts + CouncilTax 
 + Percentage5to15 + PrimaryPTRatio + PerBirthsOut + PerClaimantFemale, 
 data=scotvote, num.reps=5000)
-summary(glmdm.linear.out, alpha=0.05)
 
+data(ssas)
 glmdm.probit.ssas <- glmdm(scotpar2 ~ househld + rsex + rage + relgsums + ptyallgs
 + idlosem + marrmus + ukintnat + natinnat + voiceuk3 + nhssat, data=ssas, 
 family=binomial(link="probit"), num.reps=10000, log=TRUE)
-summary(glmdm.probit.ssas)
 
-glmdm.probit.asia <- glmdm(ATT ~ EDM + FED + SYS + AUT, data=asia, 
+data(asia)
+glmdm.probit.asia <- glmdm(ATT ~ DEM + FED + SYS + AUT, data=asia, 
 family=binomial(link="probit"), num.reps=10000, log=TRUE)
-summary(glmdm.probit.asia)
-}
+
 }
 }
 
